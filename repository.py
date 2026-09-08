@@ -573,6 +573,41 @@ def export_roster_csv(
     return "roster.csv", buffer.getvalue().encode("utf-8")
 
 
+def toggle_attendance(conn: sqlite3.Connection, session_id: int, student_id: int) -> str:
+    """Toggle a student's attendance for a session. Returns new status ('present'|'absent')."""
+    row = conn.execute(
+        "SELECT id, status FROM attendance WHERE session_id = ? AND student_id = ?",
+        (session_id, student_id),
+    ).fetchone()
+    if row is None:
+        conn.execute(
+            "INSERT INTO attendance (session_id, student_id, status, source) VALUES (?, ?, 'present', 'manual')",
+            (session_id, student_id),
+        )
+        return "present"
+    new_status = "absent" if row["status"] == "present" else "present"
+    conn.execute(
+        "UPDATE attendance SET status = ?, source = 'manual' WHERE id = ?",
+        (new_status, row["id"]),
+    )
+    return new_status
+
+
+def get_session(conn: sqlite3.Connection, session_id: int):
+    return conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
+
+
+def get_student(conn: sqlite3.Connection, student_id: int):
+    return conn.execute("SELECT * FROM students WHERE id = ?", (student_id,)).fetchone()
+
+
+def add_students_to_enrollment(conn: sqlite3.Connection, class_id: int, student_ids: list[int]) -> None:
+    conn.executemany(
+        "INSERT OR IGNORE INTO class_enrollment (class_id, student_id) VALUES (?, ?)",
+        [(class_id, sid) for sid in student_ids],
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Reports
 # --------------------------------------------------------------------------- #

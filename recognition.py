@@ -417,6 +417,45 @@ def analyze_group_photo(
     return candidates, marks
 
 
+def preview_group_photo(
+    image: np.ndarray | bytes | Path,
+    encoder: FaceEncoder,
+    encodings: list[dict],
+    threshold: float,
+) -> list[dict]:
+    """Detect and match all faces in a group image WITHOUT any DB writes.
+
+    Returns a list of dicts with keys:
+      recognized, box, confidence, crop_b64, name, student_id, distance, embedding_b64
+    The embedding is base64-encoded float32 bytes so the frontend can pass it
+    back to register-crop without re-running detection.
+    """
+    encoder.load()
+    rgb = _load_rgb(image)
+    faces = encoder.detect_and_embed(rgb)
+    name_to_id = {e["name"]: e["student_id"] for e in encodings}
+
+    results: list[dict] = []
+    for face in faces:
+        name, distance = _match(face, encodings, threshold)
+        crop = _crop_face(rgb, face.box)
+        crop_bytes = _rgb_to_bytes(crop)
+        emb_b64 = base64.b64encode(np.asarray(face.embedding, dtype=np.float32).tobytes()).decode("ascii")
+        results.append(
+            {
+                "recognized": name is not None,
+                "box": list(face.box),
+                "confidence": float(face.confidence),
+                "crop_b64": base64.b64encode(crop_bytes).decode("ascii"),
+                "name": name,
+                "student_id": name_to_id.get(name) if name else None,
+                "distance": float(distance),
+                "embedding_b64": emb_b64,
+            }
+        )
+    return results
+
+
 def register_student_from_crop(
     conn: sqlite3.Connection,
     encoder: FaceEncoder,
